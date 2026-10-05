@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, formatApiError } from "@/lib/api";
+import { maskPhone } from "@/lib/phone";
 import { SheetDialog } from "@/components/SheetDialog";
 import { FormField, PrimaryButton, inputCls } from "@/components/FormField";
 
@@ -10,7 +11,7 @@ const FIELDS = [
   ["conditions", "Condições de saúde", "Ex.: hipertensão, diabetes tipo 2"],
   ["allergies", "Alergias", "Ex.: dipirona, frutos do mar"],
   ["emergency_contact_name", "Contato de emergência", "Nome do familiar ou responsável"],
-  ["emergency_contact_phone", "Telefone de emergência", "(11) 99999-9999"],
+  ["emergency_contact_phone", "Telefone de emergência", "(31) 97306-1826"],
   ["notes", "Observações", "Rotina, preferências, cuidados especiais"],
 ];
 
@@ -18,7 +19,7 @@ export const PatientFormDialog = ({ open, onOpenChange, patient, onSaved }) => {
   const qc = useQueryClient();
   const [form, setForm] = useState(EMPTY);
   useEffect(() => { if (open) setForm(patient ? { ...EMPTY, ...patient } : EMPTY); }, [open, patient]);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: k === "emergency_contact_phone" ? maskPhone(e.target.value) : e.target.value }));
 
   const save = useMutation({
     mutationFn: (body) => (patient ? api.put(`/patients/${patient.id}`, body) : api.post("/patients", body)),
@@ -51,7 +52,7 @@ export const PatientFormDialog = ({ open, onOpenChange, patient, onSaved }) => {
             {key === "notes" || key === "conditions" ? (
               <textarea id={`p-${key}`} rows={3} value={form[key]} onChange={set(key)} placeholder={ph} data-testid={`patient-${key}-input`} className={`${inputCls} h-auto py-3 resize-none`} />
             ) : (
-              <input id={`p-${key}`} value={form[key]} onChange={set(key)} placeholder={ph} data-testid={`patient-${key}-input`} className={inputCls} type={key.endsWith("phone") ? "tel" : "text"} />
+              <input id={`p-${key}`} value={form[key]} onChange={set(key)} placeholder={ph} data-testid={`patient-${key}-input`} className={inputCls} {...(key.endsWith("phone") ? { type: "tel", inputMode: "numeric", maxLength: 15, autoComplete: "tel-national" } : { type: "text" })} />
             )}
           </FormField>
         ))}
