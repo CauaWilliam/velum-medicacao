@@ -8,12 +8,12 @@ import { FormField, PrimaryButton, inputCls } from "@/components/FormField";
 
 export const AppointmentFormDialog = ({ open, onOpenChange, patientId, appointment }) => {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ description: "", location: "", date: "", time: "" });
+  const [form, setForm] = useState({ description: "", location: "", when: "" });
 
   useEffect(() => {
     if (!open) return;
-    const parts = appointment ? toInputParts(appointment.scheduled_at) : { date: "", time: "" };
-    setForm({ description: appointment?.title || "", location: appointment?.detail || "", ...parts });
+    const parts = appointment ? toInputParts(appointment.scheduled_at) : null;
+    setForm({ description: appointment?.title || "", location: appointment?.detail || "", when: parts ? `${parts.date}T${parts.time}` : "" });
   }, [open, appointment]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -30,7 +30,7 @@ export const AppointmentFormDialog = ({ open, onOpenChange, patientId, appointme
 
   const submit = (e) => {
     e.preventDefault();
-    const scheduled_at = new Date(`${form.date}T${form.time}`).toISOString();
+    const scheduled_at = new Date(form.when).toISOString();
     save.mutate({ description: form.description, location: form.location, scheduled_at });
   };
 
@@ -43,14 +43,9 @@ export const AppointmentFormDialog = ({ open, onOpenChange, patientId, appointme
         <FormField label="Local (opcional)" htmlFor="a-loc">
           <input id="a-loc" value={form.location} onChange={set("location")} className={inputCls} placeholder="Ex.: Clínica São Lucas" data-testid="appointment-location-input" />
         </FormField>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Data" htmlFor="a-date">
-            <input id="a-date" type="date" required value={form.date} onChange={set("date")} className={`${inputCls} px-3`} data-testid="appointment-date-input" />
-          </FormField>
-          <FormField label="Hora" htmlFor="a-time">
-            <input id="a-time" type="time" required value={form.time} onChange={set("time")} className={`${inputCls} px-3`} data-testid="appointment-time-input" />
-          </FormField>
-        </div>
+        <FormField label="Data e hora" htmlFor="a-when">
+          <input id="a-when" type="datetime-local" required value={form.when} onChange={set("when")} className={`${inputCls} block min-w-0 appearance-none`} data-testid="appointment-datetime-input" />
+        </FormField>
         <PrimaryButton type="submit" disabled={save.isPending} data-testid="appointment-save-button">
           {save.isPending ? "Salvando..." : "Salvar compromisso"}
         </PrimaryButton>
