@@ -1,0 +1,104 @@
+{
+  "project_name": "Velum - Caregiver PWA",
+  "app_type": "mobile_web_app (PWA, mobile-first)",
+  "language": "pt-BR",
+  "design_context": "Caregiver management app for elderly care. Requires a compassionate, soothing, organic, and ultra-readable interface with clear visual hierarchy, real-time delay counters, audit logging, multi-patient support, and PWA Web Push capabilities.",
+  "archetype": "ORGANIC & EARTHY (Trust, Growth, Calm, Human)",
+  "color_palette": {
+    "background_default": "#FBF8F3",
+    "background_subtle": "#F3EFE6",
+    "card_background": "#FFFFFF",
+    "card_border": "#E4DDD3",
+    "text_primary": "#2C3531",
+    "text_secondary": "#6E7772",
+    "primary_sage": "#5B7065",
+    "primary_sage_hover": "#495B51",
+    "primary_sage_light": "#E9EFEB",
+    "terracotta_clay": "#C86D51",
+    "terracotta_light": "#FAF0EC",
+    "success_green": "#3E6B48",
+    "success_green_light": "#EAF3EC",
+    "warning_amber": "#D97706",
+    "warning_amber_light": "#FEF3C7",
+    "danger_red": "#B84A39",
+    "danger_red_light": "#FEE2E2"
+  },
+  "typography": {
+    "font_family_heading": "Outfit, Plus Jakarta Sans, sans-serif",
+    "font_family_body": "Inter, DM Sans, system-ui, sans-serif",
+    "font_family_mono": "JetBrains Mono, monospace",
+    "font_sizes": {
+      "hero_title": "text-3xl sm:text-4xl font-bold tracking-tight",
+      "section_header": "text-xl sm:text-2xl font-semibold tracking-tight",
+      "card_title": "text-lg font-semibold",
+      "body_text": "text-base leading-relaxed",
+      "caption_text": "text-sm text-[#6E7772]",
+      "badge_text": "text-xs font-medium tracking-wide"
+    }
+  },
+  "spacing_and_layout": {
+    "mobile_container": "max-w-md mx-auto min-h-screen bg-[#FBF8F3] text-[#2C3531] pb-24 relative shadow-2xl sm:border-x sm:border-[#E4DDD3]",
+    "bottom_nav": "fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#FBF8F3]/95 backdrop-blur-md border-t border-[#E4DDD3] px-4 py-2 flex justify-around items-center z-50 rounded-t-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.05)]",
+    "card_padding": "p-5 rounded-2xl bg-white border border-[#E4DDD3] shadow-sm hover:shadow-md transition-all duration-200",
+    "gap_scale": "space-y-4 md:space-y-6"
+  },
+  "components_and_states": {
+    "delay_counter": {
+      "description": "Real-time delay indicator shown when a medication dose or appointment is past due and not yet completed.",
+      "styles": "bg-[#FEE2E2] text-[#B84A39] border border-[#FCA5A5] px-3 py-1 rounded-full text-xs font-semibold font-mono inline-flex items-center gap-1.5 animate-pulse",
+      "format": "ex: '15 min de atraso' / '1h 20min de atraso'"
+    },
+    "action_buttons": {
+      "completed": "bg-[#3E6B48] hover:bg-[#33583B] text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1.5 active:scale-95 shadow-sm",
+      "not_completed": "bg-[#FAF0EC] hover:bg-[#F5E2DA] text-[#C86D51] border border-[#F0C4B6] px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-1.5 active:scale-95",
+      "status_badge_done": "bg-[#EAF3EC] text-[#3E6B48] border border-[#A7D7B0] px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1",
+      "status_badge_missed": "bg-[#FAF0EC] text-[#C86D51] border border-[#F0C4B6] px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1"
+    },
+    "push_notification_banner": {
+      "active_state": "bg-[#E9EFEB] border border-[#B3CBC0] text-[#5B7065] p-4 rounded-2xl flex items-center justify-between",
+      "inactive_state": "bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] p-4 rounded-2xl flex items-center justify-between"
+    }
+  },
+  "image_urls": {
+    "hero_caregiver_holding_hands": "https://images.unsplash.com/photo-1682352689072-7b2c0b8580c2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwyfHxlbGRlcmx5JTIwY2FyZSUyMGNhcmVnaXZlciUyMHdhcm0lMjBjb21wYXNzaW9ufGVufDB8fHx8MTc5MTE3MzUwMHww&ixlib=rb-4.1.0&q=85",
+    "elderly_patient_assisted": "https://images.unsplash.com/photo-1773227055624-07b515ba87c5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHw0fHxlbGRlcmx5JTIwY2FyZSUyMGNhcmVnaXZlciUyMHdhcm0lMjBjb21wYXNzaW9ufGVufDB8fHx8MTc5MTE3MzUwMHww&ixlib=rb-4.1.0&q=85",
+    "gentle_hands": "https://images.unsplash.com/photo-1603839834958-ae04ebbb3ec1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwzfHxlbGRlcmx5JTIwY2FyZSUyMGNhcmVnaXZlciUyMHdhcm0lMjBjb21wYXNzaW9ufGVufDB8fHx8MTc5MTE3MzUwMHww&ixlib=rb-4.1.0&q=85"
+  },
+  "interactive_features": {
+    "today_schedule_dashboard": "Aggregates daily medication doses (recurring daily) and appointments for all caregiver's patients for today, ordered by scheduled time.",
+    "real_time_delay": "Uses a 10-second ticker logic to recalculate exact minutes/hours overdue for uncompleted items past scheduled time.",
+    "patient_tabs": "Patient detail view featuring tabs: 'Medicações', 'Compromissos', and 'Histórico' (Audit log of actions with date, status, notes, caregiver name).",
+    "multi_tenant_auth": "Caregiver authentication with email/password; isolated patient data per logged-in caregiver.",
+    "web_push_vapid": "Support for enabling Web Push notifications using VAPID keys with immediate exact-time alerts for medications and advance warnings (1 day and 2 hours prior) for appointments."
+  },
+  "testing_guidelines": {
+    "data_testid_convention": "All interactive elements, buttons, inputs, tab items, cards, and delay counters MUST carry semantic `data-testid` attributes.",
+    "examples": [
+      "data-testid=\"login-email-input\"",
+      "data-testid=\"login-submit-button\"",
+      "data-testid=\"nav-hoje-tab\"",
+      "data-testid=\"nav-pacientes-tab\"",
+      "data-testid=\"nav-historico-tab\"",
+      "data-testid=\"patient-card-patient-id\"",
+      "data-testid=\"dose-complete-button-item-id\"",
+      "data-testid=\"dose-incomplete-button-item-id\"",
+      "data-testid=\"delay-counter-item-id\"",
+      "data-testid=\"add-patient-button\"",
+      "data-testid=\"push-notification-toggle\""
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure the entire user interface is in Brazilian Portuguese (pt-BR).",
+    "Keep mobile-first responsive design as the primary target, using smooth transitions, rounded corners, and clear typography.",
+    "Implement multi-tenant data scoping: each caregiver sees only their own created patients, medications, and appointments.",
+    "Ensure real-time delay counter updates dynamically when an action remains unfulfilled after scheduled time.",
+    "Set up service worker and manifest for PWA installation capabilities and push notification handlers.",
+    "Never use generic centered layouts or unstyled default HTML inputs."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Do not use transparent background on dropdowns or floating navs; use layered blur or solid surfaces.",
+    "Include data-testid on every interactive button, tab, and form input.",
+    "Use sonner for user feedback toasts (e.g., 'Medicação marcada como concluída').",
+    "Maintain generous spacing, soft earthy rounded borders, and crisp typography hierarchy."
+  ]
+}
