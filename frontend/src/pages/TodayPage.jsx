@@ -37,7 +37,7 @@ export default function TodayPage() {
   return (
     <div className="px-5 pt-8 space-y-7">
       <header className="fade-up">
-        <p className="text-ink-soft text-base capitalize" data-testid="today-date">{todayLong()}</p>
+        <p className="text-ink-soft text-base first-letter:uppercase" data-testid="today-date">{todayLong()}</p>
         <h1 className="font-heading text-4xl font-bold tracking-tight mt-1" data-testid="today-greeting">Olá, {firstName}</h1>
       </header>
       <PushBanner />

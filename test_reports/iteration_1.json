@@ -1,0 +1,42 @@
+{
+  "summary": "Backend + Frontend testing of Velum PWA. 15/17 backend tests pass; discovered one CRITICAL bug: POST /api/actions cannot accept medication occurrence_keys because the key format med:{id}:{YYYY-MM-DD}:{HH:MM} splits into 5 parts via split(':') but server validates len(parts) != 4. Every attempt to mark a dose as Concluído/Não Concluído returns 400 'Ocorrência inválida', confirmed via API AND UI (toast error). Frontend UI itself (registration, login, logout, patient CRUD, medication CRUD, tabs, delay counter real-time rendering, mobile layout 390px) all work correctly. Appointments CRUD and appointment actions work (occurrence_key format appt:{id} has only 2 parts and goes through different branch).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/actions (medication)", "issue": "occurrence_key 'med:{id}:{YYYY-MM-DD}:{HH:MM}' splits into 5 colon-separated parts; server at server.py:412-422 enforces len(parts)!=4 -> 400 'Ocorrência inválida'. Breaks ALL medication Concluído/Não Concluído actions, so Hoje page, patient agenda and history for medications are non-functional. Fix: parse by splitting into at most 4 segments (e.g., occurrence_key.split(':', 3)) or reconstruct hhmm from parts[3]+':'+parts[4] when len==5.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "5-fail lockout counter keyed by request.client.host; in the preview env the ingress occasionally rotates client IPs so lockout may not accumulate within 5-10 attempts. Marked xfail. Consider using X-Forwarded-For (leftmost) or user-agent for identifier when behind a trusted proxy."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Hoje / MedicacoesTab Concluído flow", "issue": "Clicking Concluído/Não Concluído on medication dose shows red toast 'Ocorrência inválida' (consequence of backend bug above). Status not persisted, no history entry.", "selector": "[data-testid^='complete-button-'], [data-testid^='incomplete-button-']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Mark medication dose", "issue": "API 400 returned by /api/actions prevents moving item to 'Já registrados' and creating audit entry", "affected_selectors": ["[data-testid^='history-item-']", "[data-testid^='status-badge-']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_velum_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "FIX server.py mark_action occurrence_key parsing: replace parts = split(':') + len!=4 check with split(':',3) so that '{HH:MM}' remains in parts[3], or validate as regex. Example fix: parts = body.occurrence_key.split(':', 3); if len(parts) != 4 or parts[0] != 'med' or parts[1] != body.ref_id: 400. Then hhmm = parts[3] (already 'HH:MM').",
+    "After backend fix, re-run tests - the xfail in TestAgendaActions should become xpass; UI flow for Concluído should produce green toast + history entry.",
+    "Optional: harden login lockout against preview-env IP rotation."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 412: `parts = body.occurrence_key.split(':')` without maxsplit is incompatible with the key format emitted by med_item() where hhmm contains ':'. Core logic broken.",
+    "notifier.py:14 GRACE=5min — if the notifier loop misses a dose by >5 min (service restart, long GC), the user never gets a push. Consider wider grace or last-sent cursor.",
+    "server.py seeded admin uses role 'admin' but all endpoints treat caregivers uniformly; isolation uses owner_id which is correct, so admin has no elevated access — document or remove the field.",
+    "server.py set_access_cookie uses secure=True unconditionally — fine for prod HTTPS preview, but will break local http dev."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_velum_backend.py (new file)"
+  ],
+  "success_rate": {"backend": "88% (15 passed / 1 xfail documents bug / 1 flaky in parallel run)", "frontend": "90% (all UI flows work except marking Concluído which fails due to backend bug)"},
+  "test_credentials": "Owner cauabeckler0@gmail.com / Velum@2026 used only for /auth/me verification; no bad-login attempts against it. Test caregivers were created with test_* prefix and cleaned up via session fixture.",
+  "seed_data_creation": "test_* prefixed caregivers, 'TEST_' prefixed patients and medications. Cleanup fixture at end of pytest run deletes TEST users and cascades.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest file is at /app/backend/tests/test_velum_backend.py. The TestAgendaActions test is marked xfail — after the occurrence_key parsing fix, flip the expected assertion back. Isolation test accepts 400 OR 404 for B's write on A's resource (ownership check order after validation). UI testids are complete and reliable. Preview backend's system clock showed Oct 2026 while instructions say Jan 2026 — this is environmental; medication times are evaluated in the user's timezone from the server's wall clock.",
+  "rca of the issue": "RCA: In server.py mark_action the server attempts to decompose the medication occurrence_key with `parts = body.occurrence_key.split(':')` and then enforces `len(parts) != 4`. The medication occurrence_key emitted by med_item() is `f'med:{med.id}:{local_date.isoformat()}:{hhmm}'` where hhmm is a `HH:MM` string containing a colon. The resulting list has 5 elements (['med', id, 'YYYY-MM-DD', 'HH', 'MM']) so the length check always fails -> HTTPException 400 'Ocorrência inválida'. Reproduction: register, create patient, create medication, call POST /api/actions with the exact occurrence_key returned by GET /api/agenda/today → 400. Mitigation: `parts = body.occurrence_key.split(':', 3)` (maxsplit=3) keeps 'HH:MM' intact as parts[3]; also drop the brittle `len(parts[3]) == 5` ternary and simply use `hhmm = parts[3]`."
+}

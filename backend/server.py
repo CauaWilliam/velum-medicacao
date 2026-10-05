@@ -157,7 +157,8 @@ async def register(body: RegisterIn, response: Response):
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     email = body.email.lower()
-    ip = request.client.host if request.client else "unknown"
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
     identifier = f"{ip}:{email}"
     attempt = await db.login_attempts.find_one({"identifier": identifier})
     if attempt and attempt.get("locked_until") and attempt["locked_until"] > now_utc():
@@ -409,11 +410,11 @@ async def patient_agenda(patient_id: str, user: dict = Depends(get_current_user)
 async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
     tz = user_tz(user)
     if body.kind == "medication":
-        parts = body.occurrence_key.split(":")
+        parts = body.occurrence_key.split(":", 3)
         if len(parts) != 4 or parts[0] != "med" or parts[1] != body.ref_id:
             raise HTTPException(status_code=400, detail="Ocorrência inválida")
         med = await owned_medication(body.ref_id, user)
-        hhmm = f"{parts[3]}" if len(parts[3]) == 5 else None
+        hhmm = parts[3]
         try:
             local_date = date.fromisoformat(parts[2])
         except ValueError:

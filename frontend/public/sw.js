@@ -50,10 +50,10 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       const existing = list.find((c) => c.url.startsWith(self.location.origin));
       if (existing) return existing.focus().then(() => existing.navigate(target));
-      return clients.openWindow(target);
+      return self.clients.openWindow(target);
     })
   );
 });
