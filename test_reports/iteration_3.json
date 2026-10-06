@@ -1,0 +1,36 @@
+{
+  "summary": "Full backend + frontend regression for the NEW interval-based Recorrente medication feature (replacing daily-times recurring). Backend 21/21 pytest green on live preview. Frontend mobile 390px flow fully works: Recorrente toggle ON by default, 7 interval chips [1,2,4,6,8,12,24]h with 8h aria-checked by default, Primeira dose datetime-local defaults to next full hour, preview of next 4 doses updates when interval or start_at changes, old 'Horários das doses' list hidden when ON, toggle OFF shows Data da dose (default today) + time-input list + add-time button, hides next-doses preview, saving a recurring med renders badge 'A cada Nh' + next 3 dose chips, edit preloads interval and start_at, History tab reachable with history-list/empty/load-more testids.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "N/A", "issue": "Legacy medications written before this feature that lack interval_hours/start_at will crash notifier.med_doses() when build_agenda/history iterates them (med['start_at'] KeyError). Not reproducible on fresh data; relevant only if production has pre-feature docs. Consider a migration or defensive skip in med_doses()."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MedicationFormDialog", "issues": ["Interval chip grid uses grid-cols-4 for 7 items -> last row is a single chip taking 1 col and leaving 3 empty cells on narrow screens. Minor; mobile 390px looks fine."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_velum_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Low) Add defensive handling in notifier.med_doses for legacy medications missing interval_hours/start_at (e.g., treat missing fields as non-recurring or skip).",
+    "(Nit) Consider grid-cols-7 or grid-cols-3 for interval chips so the row balances visually."
+  ],
+  "critical_code_review_comments": [
+    "MedicationIn.check_schedule correctly enforces: recurring=True => interval_hours in [1,2,4,6,8,12,24] + start_at with tz, and clears date/times; recurring=False => iso date + at least one HH:MM, and clears interval_hours/start_at. 422 fires for interval=3, missing interval, naive start_at, missing date, missing times, bad time format. All verified.",
+    "mark_action parses occurrence_key via split(':',3) and validates that the exact (date,HH:MM) belongs to med_doses(med, scheduled_at, scheduled_at, tz). Wrong minute (08:15) and non-aligned hour (09:00 on 8h-aligned schedule) correctly rejected with 400.",
+    "build_agenda uses day_start/day_end window and med_doses enumerates every k*interval dose that falls on today's local date for recurring meds. Verified: 6h interval starting at 00:00 today yields exactly 00:00/06:00/12:00/18:00.",
+    "patient_history groups by local day and reports changes array, last status, caregiver_name, marked_at and marked_delay_minutes. Verified for interval meds.",
+    "notifier.med_doses assumes med['start_at'] and med['interval_hours'] exist when recurring=True (default). Any legacy doc without those fields will raise KeyError inside the notifier loop and inside build_agenda/history. Noted above as minor."
+  ],
+  "updated_files": ["/app/backend/tests/test_velum_backend.py"],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% of in-scope flows"},
+  "test_credentials": "Owner cauabeckler0@gmail.com / Velum@2026 used read-only. Dynamic test_*@example.com caregivers created via /api/auth/register and cleaned up (users+patients+meds+appts+logs+subs).",
+  "seed_data_creation": "test_* caregivers + TEST_ patients/meds created during tests, cleaned up via pymongo at the end + explicit cleanup script.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_velum_backend.py was fully rewritten for the new interval model (interval_hours + start_at). Old daily-times recurring assertions were REMOVED. Test file covers: 422 for missing interval, interval=3, naive start_at, missing date/times, bad HH:MM; 200 for recurring/non-recurring; schedule-field clearing both ways; agenda today enumerates every k*interval dose on today's local date with correct occurrence_key format med:{id}:{YYYY-MM-DD}:{HH:MM}; actions reject wrong minute and non-aligned hour; history grouped shape with changes[], marked_delay_minutes, caregiver_name; multi-tenant isolation incl. /history 404; appointments CRUD; push sub/unsub; refresh+logout. Server clock is Oct 2026 in preview env; headless browser displays times in the server/user tz (America/Sao_Paulo in these runs). Push delivery itself cannot be tested headless.",
+  "rca of the issue": "N/A - new feature verified end-to-end, no bugs found."
+}
