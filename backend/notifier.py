@@ -66,6 +66,8 @@ async def process_owner(owner_id: str, now: datetime) -> None:
     patients = {str(p["_id"]): p["name"] async for p in db.patients.find({"owner_id": owner_id})}
 
     async for med in db.medications.find({"owner_id": owner_id}):
+        if not med.get("recurring", True) and med.get("date") != today.isoformat():
+            continue
         for hhmm in med.get("times", []):
             due = dose_datetime(today, hhmm, tz)
             if timedelta(0) <= now - due < GRACE:

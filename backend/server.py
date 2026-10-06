@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 
 from core import (BaseDocument, PyObjectId, db, client, decode_token, get_current_user, hash_password, now_utc,
@@ -56,13 +56,35 @@ class Medication(BaseDocument):
     name: str
     dosage: str
     times: List[str]
+    recurring: bool = True
+    date: Optional[str] = None
     created_at: datetime
+
+    def dose_days(self, first: date, last: date, tz) -> List[date]:
+        if self.recurring:
+            start = max(first, self.created_at.astimezone(tz).date())
+            return [start + timedelta(days=n) for n in range((last - start).days + 1)]
+        single = date.fromisoformat(self.date) if self.date else None
+        return [single] if single and first <= single <= last else []
 
 
 class MedicationIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     dosage: str = Field(min_length=1, max_length=120)
     times: List[str] = Field(min_length=1)
+    recurring: bool = True
+    date: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_date(self):
+        if self.recurring:
+            self.date = None
+            return self
+        try:
+            date.fromisoformat(self.date or "")
+        except ValueError:
+            raise ValueError("Informe a data da dose única (AAAA-MM-DD)")
+        return self
 
     @field_validator("times")
     @classmethod
@@ -381,15 +403,17 @@ async def build_agenda(user: dict, patient_id: Optional[str] = None) -> List[dic
     items = []
     async for d in db.medications.find(scope):
         med = Medication.from_mongo(d)
-        for hhmm in med.times:
-            items.append(med_item(med, names.get(med.patient_id, ""), today, hhmm, tz))
+        days = [today] if med.recurring else med.dose_days(today - timedelta(days=30), today, tz)
+        for day in days:
+            for hhmm in med.times:
+                items.append(med_item(med, names.get(med.patient_id, ""), day, hhmm, tz))
     day_start = datetime.combine(today, time(0, 0), tz).astimezone(timezone.utc)
     day_end = day_start + timedelta(days=1)
     appt_docs = await db.appointments.find(
         {**scope, "scheduled_at": {"$gte": day_start - timedelta(days=30), "$lt": day_end}}).to_list(1000)
     appts = [appt_item(Appointment.from_mongo(d), names.get(d["patient_id"], "")) for d in appt_docs]
     items = await attach_status(user["_id"], items + appts)
-    return [i for i in items if i["kind"] == "medication" or i["scheduled_at"] >= day_start or i["status"] is None]
+    return [i for i in items if i["scheduled_at"] >= day_start or i["status"] is None]
 
 
 @api.get("/agenda/today")
@@ -421,6 +445,8 @@ async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Ocorrência inválida")
         if hhmm not in med.times:
             raise HTTPException(status_code=400, detail="Horário não pertence à medicação")
+        if not med.recurring and parts[2] != med.date:
+            raise HTTPException(status_code=400, detail="Data não pertence à dose única")
         patient_id, title, detail = med.patient_id, med.name, med.dosage
         scheduled_at = dose_datetime(local_date, hhmm, tz)
     else:
@@ -439,11 +465,47 @@ async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
 
 
 @api.get("/patients/{patient_id}/history")
-async def patient_history(patient_id: str, user: dict = Depends(get_current_user)):
-    await owned_patient(patient_id, user)
-    docs = await db.audit_logs.find({"patient_id": patient_id, "owner_id": user["_id"]}).sort(
-        "marked_at", -1).to_list(500)
-    return [AuditLog.from_mongo(d).model_dump() for d in docs]
+async def patient_history(patient_id: str, days: int = 30, user: dict = Depends(get_current_user)):
+    patient = await owned_patient(patient_id, user)
+    days = max(1, min(days, 365))
+    tz = user_tz(user)
+    now = now_utc()
+    today = now.astimezone(tz).date()
+    first_day = today - timedelta(days=days - 1)
+    range_start = datetime.combine(first_day, time(0, 0), tz).astimezone(timezone.utc)
+    scope = {"owner_id": user["_id"], "patient_id": patient_id}
+    occ = {}
+    async for d in db.medications.find(scope):
+        med = Medication.from_mongo(d)
+        for day in med.dose_days(first_day, today, tz):
+            for hhmm in med.times:
+                item = med_item(med, patient.name, day, hhmm, tz)
+                if item["scheduled_at"] <= now:
+                    occ[item["occurrence_key"]] = item
+    async for d in db.appointments.find({**scope, "scheduled_at": {"$gte": range_start, "$lte": now}}):
+        item = appt_item(Appointment.from_mongo(d), patient.name)
+        occ[item["occurrence_key"]] = item
+    logs = await db.audit_logs.find({**scope, "$or": [{"scheduled_at": {"$gte": range_start}},
+                                                    {"marked_at": {"$gte": range_start}}]}).sort("marked_at", 1).to_list(10000)
+    for raw in logs:
+        log = AuditLog.from_mongo(raw)
+        item = occ.setdefault(log.occurrence_key, {
+            "occurrence_key": log.occurrence_key, "kind": log.kind, "ref_id": log.ref_id,
+            "patient_id": patient_id, "patient_name": patient.name, "title": log.item_title,
+            "detail": log.item_detail, "scheduled_at": log.scheduled_at})
+        item.setdefault("changes", []).append(
+            {"id": log.id, "status": log.status, "marked_at": log.marked_at, "caregiver_name": log.caregiver_name})
+    grouped = {}
+    for item in occ.values():
+        changes = item.setdefault("changes", [])
+        last = changes[-1] if changes else None
+        item["status"] = last["status"] if last else None
+        item["marked_at"] = last["marked_at"] if last else None
+        item["caregiver_name"] = last["caregiver_name"] if last else None
+        item["marked_delay_minutes"] = int((last["marked_at"] - item["scheduled_at"]).total_seconds() // 60) if last else None
+        grouped.setdefault(item["scheduled_at"].astimezone(tz).date().isoformat(), []).append(item)
+    return {"days": [{"date": d, "items": sorted(grouped[d], key=lambda i: i["scheduled_at"])}
+                     for d in sorted(grouped, reverse=True)], "range_days": days}
 
 
 # ---------- Push ----------
