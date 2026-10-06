@@ -1,0 +1,37 @@
+{
+  "summary": "Full backend + frontend regression for the new 'Recorrente' medication toggle, non-recurring date, agenda filtering and new grouped history endpoint. Backend 23/24 pytest green (1 flaky appointment test under xdist loadscope, passes solo). Frontend mobile 390px flow fully works: toggle ON by default, hint changes, date field appears when OFF (defaults to today), recurring badge 'Todos os dias', non-recurring badge 'Dose única · DD/MM/AAAA', edit preserves state, Concluído produces green toast and history entry with Programado/Marcado + delay counter + caregiver name. Occurrence_key parsing bug from iter 1 is fixed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Lockout counter keyed by first X-Forwarded-For hop may not accumulate reliably in preview env due to ingress IP rotation. Pre-existing, documented via xfail."},
+      {"endpoint": "pytest xdist", "issue": "TestAppointments.test_crud intermittently returns 401 when run in parallel (loadscope). Passes 100% when run sequentially. Likely session-scoped fixture cross-contamination with cookie jars across workers, not a backend bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MedicationFormDialog / all SheetDialog instances", "issues": ["Radix warning: 'Missing Description or aria-describedby={undefined} for DialogContent' — pass a <SheetDescription> or aria-describedby prop to improve a11y."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_velum_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Low) Add aria-describedby / SheetDescription to SheetDialog to silence Radix a11y warning.",
+    "(Low) Investigate xdist flakiness in TestAppointments if parallel pytest is desired; harmless otherwise."
+  ],
+  "critical_code_review_comments": [
+    "server.py build_agenda uses `today - timedelta(days=30)` as the historical window for non-recurring overdue meds; this is also used as the lower bound for appointments. Matches spec (overdue up to 30 days).",
+    "patient_history: items with scheduled_at > now are filtered out for medications (`if item['scheduled_at'] <= now`), but if there's an existing audit_log for a future-scheduled dose it would still be surfaced via logs loop; low risk given typical UX.",
+    "MedicationIn.check_date silently nulls `date` when recurring=True — intentional per spec. Frontend already passes date=null in that case.",
+    "notifier.py skips non-recurring meds whose `date` != today — matches spec. OK.",
+    "patient_history default range is 30 days, max 365 — matches history-load-more incrementing by 30. OK."
+  ],
+  "updated_files": ["/app/backend/tests/test_velum_backend.py"],
+  "success_rate": {"backend": "96% (23/24, 1 flaky under xdist, 0 real failures)", "frontend": "100% of in-scope flows working"},
+  "test_credentials": "Owner cauabeckler0@gmail.com / Velum@2026 used only for auth/me reads. Dynamic test_*@example.com caregivers created and cleaned up.",
+  "seed_data_creation": "test_* caregivers + TEST_ patients/meds/history created during tests, cleaned up via pymongo at end + explicit cleanup script.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/test_velum_backend.py now include TestRecurringMeds covering: recurring default True + date nulled, non-recurring 422 w/o date, agenda shows recurring every day + non-recurring only on its date + overdue up to 30d + hides future, action rejects wrong date (400), history grouped shape {days:[{date,items:[{changes[]}]}], range_days}, history multi-tenant 404, legacy med without 'recurring' field behaves as recurring. Server clock is Oct 2026 in preview env; test timezone defaults to America/Sao_Paulo. The occurrence_key bug (split(':') vs split(':',3)) from iter 1 is confirmed fixed on live backend.",
+  "rca of the issue": "N/A — all iter-1 bugs fixed and new feature verified end-to-end."
+}

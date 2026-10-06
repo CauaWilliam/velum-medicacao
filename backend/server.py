@@ -179,9 +179,7 @@ async def register(body: RegisterIn, response: Response):
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request, response: Response):
     email = body.email.lower()
-    forwarded = request.headers.get("x-forwarded-for", "")
-    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-    identifier = f"{ip}:{email}"
+    identifier = email
     attempt = await db.login_attempts.find_one({"identifier": identifier})
     if attempt and attempt.get("locked_until") and attempt["locked_until"] > now_utc():
         raise HTTPException(status_code=429, detail="Muitas tentativas. Tente novamente em 15 minutos.")

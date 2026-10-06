@@ -29,7 +29,7 @@ export function formatApiError(err) {
   const detail = err?.response?.data?.detail;
   if (detail == null) return err?.message ? "Não foi possível concluir. Tente novamente." : "Erro inesperado.";
   if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map((e) => (typeof e?.msg === "string" ? e.msg : JSON.stringify(e))).join(" ");
+  if (Array.isArray(detail)) return detail.map((e) => (typeof e?.msg === "string" ? e.msg.replace(/^Value error, /, "") : JSON.stringify(e))).join(" ");
   if (typeof detail?.msg === "string") return detail.msg;
   return String(detail);
 }

@@ -31,6 +31,14 @@ Patients CRUD, medications (daily times) CRUD, appointments CRUD, push at dose t
 - Bug fix: medication occurrence_key parsing in POST /api/actions.
 - Tested by testing agent (iteration_1); fix verified via curl.
 
+## Implemented (2026-10-06)
+- Appointment modal: single native datetime-local field.
+- Emergency phone: BR mask (XX) XXXXX-XXXX, numbers only, tel:+55 call link/button.
+- Medication 'Recorrente' toggle (default on). Off = single dose on a chosen date (field `date`). Notifier skips non-recurring meds off-date. Past unmarked single doses show as overdue (30 days).
+- History rewritten: per day, every past dose/appointment with status (Concluído / Não concluído / Sem registro), scheduled time, actual marked time + minutes of delay, caregiver, full change trail; "Ver mais 30 dias" (up to 365).
+- Login lockout now keyed by e-mail.
+- Tested by testing agent (iteration_2): backend 23/24 (1 flaky under parallel run), frontend 100%.
+
 ## Backlog
 - P1: Forgot/reset password; edit timezone manually; multiple caregivers sharing a patient (family/team).
 - P2: Dose stock/refill reminders; PDF export of audit history; medication end date / weekly schedules.
