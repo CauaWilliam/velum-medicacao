@@ -14,10 +14,10 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 
-from core import (BaseDocument, PyObjectId, db, client, decode_token, get_current_user, hash_password, now_utc,
+from core import (BaseDocument, db, client, decode_token, get_current_user, hash_password, now_utc,
                   oid, public_user, set_access_cookie, set_auth_cookies, create_access_token, user_tz,
                   verify_password, DEFAULT_TZ)
-from notifier import dose_datetime, notifier_loop, send_to_owner
+from notifier import med_doses, notifier_loop, send_to_owner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -55,35 +55,40 @@ class Medication(BaseDocument):
     patient_id: str
     name: str
     dosage: str
-    times: List[str]
+    times: List[str] = []
     recurring: bool = True
     date: Optional[str] = None
+    interval_hours: Optional[int] = None
+    start_at: Optional[datetime] = None
     created_at: datetime
-
-    def dose_days(self, first: date, last: date, tz) -> List[date]:
-        if self.recurring:
-            start = max(first, self.created_at.astimezone(tz).date())
-            return [start + timedelta(days=n) for n in range((last - start).days + 1)]
-        single = date.fromisoformat(self.date) if self.date else None
-        return [single] if single and first <= single <= last else []
 
 
 class MedicationIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     dosage: str = Field(min_length=1, max_length=120)
-    times: List[str] = Field(min_length=1)
     recurring: bool = True
+    interval_hours: Optional[Literal[1, 2, 4, 6, 8, 12, 24]] = None
+    start_at: Optional[datetime] = None
     date: Optional[str] = None
+    times: List[str] = []
 
     @model_validator(mode="after")
-    def check_date(self):
+    def check_schedule(self):
         if self.recurring:
-            self.date = None
+            if not self.interval_hours:
+                raise ValueError("Escolha o intervalo entre doses")
+            if not self.start_at or self.start_at.tzinfo is None:
+                raise ValueError("Informe data e hora da primeira dose (com fuso horário)")
+            self.start_at = self.start_at.astimezone(timezone.utc).replace(second=0, microsecond=0)
+            self.date, self.times = None, []
             return self
         try:
             date.fromisoformat(self.date or "")
         except ValueError:
             raise ValueError("Informe a data da dose única (AAAA-MM-DD)")
+        if not self.times:
+            raise ValueError("Informe ao menos um horário")
+        self.interval_hours, self.start_at = None, None
         return self
 
     @field_validator("times")
@@ -245,10 +250,10 @@ async def latest_status(owner_id: str, keys: List[str]) -> dict:
     return result
 
 
-def med_item(med: Medication, patient_name: str, local_date: date, hhmm: str, tz) -> dict:
-    return {"occurrence_key": f"med:{med.id}:{local_date.isoformat()}:{hhmm}", "kind": "medication",
+def med_item(med: Medication, patient_name: str, key: str, due: datetime) -> dict:
+    return {"occurrence_key": key, "kind": "medication",
             "ref_id": med.id, "patient_id": med.patient_id, "patient_name": patient_name,
-            "title": med.name, "detail": med.dosage, "scheduled_at": dose_datetime(local_date, hhmm, tz)}
+            "title": med.name, "detail": med.dosage, "scheduled_at": due}
 
 
 def appt_item(appt: Appointment, patient_name: str) -> dict:
@@ -399,14 +404,13 @@ async def build_agenda(user: dict, patient_id: Optional[str] = None) -> List[dic
     pscope = {"owner_id": user["_id"]} if not patient_id else {"owner_id": user["_id"], "_id": oid(patient_id)}
     names = {str(p["_id"]): p["name"] async for p in db.patients.find(pscope)}
     items = []
-    async for d in db.medications.find(scope):
-        med = Medication.from_mongo(d)
-        days = [today] if med.recurring else med.dose_days(today - timedelta(days=30), today, tz)
-        for day in days:
-            for hhmm in med.times:
-                items.append(med_item(med, names.get(med.patient_id, ""), day, hhmm, tz))
     day_start = datetime.combine(today, time(0, 0), tz).astimezone(timezone.utc)
     day_end = day_start + timedelta(days=1)
+    async for d in db.medications.find(scope):
+        med = Medication.from_mongo(d)
+        since = day_start if med.recurring else day_start - timedelta(days=30)
+        for key, due in med_doses(med.model_dump(), since, day_end - timedelta(seconds=1), tz):
+            items.append(med_item(med, names.get(med.patient_id, ""), key, due))
     appt_docs = await db.appointments.find(
         {**scope, "scheduled_at": {"$gte": day_start - timedelta(days=30), "$lt": day_end}}).to_list(1000)
     appts = [appt_item(Appointment.from_mongo(d), names.get(d["patient_id"], "")) for d in appt_docs]
@@ -436,17 +440,15 @@ async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
         if len(parts) != 4 or parts[0] != "med" or parts[1] != body.ref_id:
             raise HTTPException(status_code=400, detail="Ocorrência inválida")
         med = await owned_medication(body.ref_id, user)
-        hhmm = parts[3]
         try:
             local_date = date.fromisoformat(parts[2])
+            h, m = map(int, parts[3].split(":"))
+            scheduled_at = datetime.combine(local_date, time(h, m), tz).astimezone(timezone.utc)
         except ValueError:
             raise HTTPException(status_code=400, detail="Ocorrência inválida")
-        if hhmm not in med.times:
+        if not any(k == body.occurrence_key for k, _ in med_doses(med.model_dump(), scheduled_at, scheduled_at, tz)):
             raise HTTPException(status_code=400, detail="Horário não pertence à medicação")
-        if not med.recurring and parts[2] != med.date:
-            raise HTTPException(status_code=400, detail="Data não pertence à dose única")
         patient_id, title, detail = med.patient_id, med.name, med.dosage
-        scheduled_at = dose_datetime(local_date, hhmm, tz)
     else:
         if body.occurrence_key != f"appt:{body.ref_id}":
             raise HTTPException(status_code=400, detail="Ocorrência inválida")
@@ -475,11 +477,8 @@ async def patient_history(patient_id: str, days: int = 30, user: dict = Depends(
     occ = {}
     async for d in db.medications.find(scope):
         med = Medication.from_mongo(d)
-        for day in med.dose_days(first_day, today, tz):
-            for hhmm in med.times:
-                item = med_item(med, patient.name, day, hhmm, tz)
-                if item["scheduled_at"] <= now:
-                    occ[item["occurrence_key"]] = item
+        for key, due in med_doses(med.model_dump(), range_start, now, tz):
+            occ[key] = med_item(med, patient.name, key, due)
     async for d in db.appointments.find({**scope, "scheduled_at": {"$gte": range_start, "$lte": now}}):
         item = appt_item(Appointment.from_mongo(d), patient.name)
         occ[item["occurrence_key"]] = item

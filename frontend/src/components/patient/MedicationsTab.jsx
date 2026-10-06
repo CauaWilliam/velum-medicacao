@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pencil, Plus, Trash2, Pill, Repeat, CalendarDays } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
+import { fmtDose, nextDoses } from "@/lib/doses";
 import { AgendaItemCard } from "@/components/AgendaItemCard";
 import { MedicationFormDialog } from "@/components/MedicationFormDialog";
 import { ConfirmDelete } from "@/components/ConfirmDelete";
@@ -22,8 +23,9 @@ const MedRow = ({ med, onEdit }) => {
         <div className="text-ink-soft break-words">{med.dosage}</div>
         <div className="flex flex-wrap gap-1.5 mt-1.5">
           <span className="px-2.5 py-0.5 rounded-full bg-sage-light text-sage-dark text-sm font-bold inline-flex items-center gap-1" data-testid={`medication-recurrence-${med.id}`}>
-            {med.recurring !== false ? <><Repeat className="w-3.5 h-3.5" /> Todos os dias</> : <><CalendarDays className="w-3.5 h-3.5" /> Dose única · {med.date.split("-").reverse().join("/")}</>}
+            {med.recurring !== false ? <><Repeat className="w-3.5 h-3.5" /> A cada {med.interval_hours}h</> : <><CalendarDays className="w-3.5 h-3.5" /> Dose única · {med.date.split("-").reverse().join("/")}</>}
           </span>
+          {med.recurring !== false && nextDoses(med.start_at, med.interval_hours, 3).map((d) => <span key={d.getTime()} className="px-2.5 py-0.5 rounded-full bg-sand-deep text-sm font-bold">{fmtDose(d)}</span>)}
           {med.times.map((t) => <span key={t} className="px-2.5 py-0.5 rounded-full bg-sand-deep text-sm font-bold">{t}</span>)}
         </div>
       </div>

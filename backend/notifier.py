@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+import math
 import os
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
@@ -57,26 +58,40 @@ def dose_datetime(local_date, hhmm: str, tz) -> datetime:
     return datetime.combine(local_date, time(h, m), tz).astimezone(timezone.utc)
 
 
+def med_doses(med: dict, start: datetime, end: datetime, tz) -> list:
+    mid = str(med.get("id") or med.get("_id"))
+    if med.get("recurring", True):
+        first, step = med["start_at"], timedelta(hours=med["interval_hours"])
+        k = max(0, math.ceil((start - first) / step))
+        dues = []
+        while first + k * step <= end:
+            dues.append(first + k * step)
+            k += 1
+    else:
+        day = date.fromisoformat(med["date"])
+        dues = [d for d in (dose_datetime(day, t, tz) for t in med.get("times", [])) if start <= d <= end]
+    out = []
+    for due in dues:
+        local = due.astimezone(tz)
+        out.append((f"med:{mid}:{local.date().isoformat()}:{local.strftime('%H:%M')}", due))
+    return out
+
+
 async def process_owner(owner_id: str, now: datetime) -> None:
     user = await db.users.find_one({"_id": ObjectId(owner_id)})
     if not user:
         return
     tz = user_tz(user)
-    today = now.astimezone(tz).date()
     patients = {str(p["_id"]): p["name"] async for p in db.patients.find({"owner_id": owner_id})}
 
     async for med in db.medications.find({"owner_id": owner_id}):
-        if not med.get("recurring", True) and med.get("date") != today.isoformat():
-            continue
-        for hhmm in med.get("times", []):
-            due = dose_datetime(today, hhmm, tz)
-            if timedelta(0) <= now - due < GRACE:
-                occ = f"med:{med['_id']}:{today.isoformat()}:{hhmm}"
-                if await db.audit_logs.find_one({"owner_id": owner_id, "occurrence_key": occ}):
-                    continue
-                name = patients.get(med["patient_id"], "Paciente")
-                await notify_once(f"push:{occ}", owner_id, f"Hora do remédio · {name}",
-                                  f"{med['name']} — {med['dosage']} ({hhmm})", f"/pacientes/{med['patient_id']}")
+        for occ, due in med_doses(med, now - GRACE, now, tz):
+            if await db.audit_logs.find_one({"owner_id": owner_id, "occurrence_key": occ}):
+                continue
+            name = patients.get(med["patient_id"], "Paciente")
+            await notify_once(f"push:{occ}", owner_id, f"Hora do remédio · {name}",
+                              f"{med['name']} — {med['dosage']} ({due.astimezone(tz).strftime('%H:%M')})",
+                              f"/pacientes/{med['patient_id']}")
 
     window = {"$gte": now - GRACE, "$lte": now + timedelta(days=1) + GRACE}
     async for appt in db.appointments.find({"owner_id": owner_id, "scheduled_at": window}):
