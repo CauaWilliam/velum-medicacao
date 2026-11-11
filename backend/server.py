@@ -14,10 +14,11 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 
-from core import (BaseDocument, db, client, decode_token, get_current_user, hash_password, now_utc,
+from core import (BaseDocument, db, client, decode_token, get_caregiver, get_current_user, hash_password, now_utc,
                   oid, public_user, set_access_cookie, set_auth_cookies, create_access_token, user_tz,
                   verify_password, DEFAULT_TZ)
 from notifier import med_doses, notifier_loop, send_to_owner
+from marketplace import router as marketplace_router, init_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
     timezone: str = DEFAULT_TZ
+    account_type: Literal["caregiver", "family"] = "caregiver"
 
 
 class LoginIn(BaseModel):
@@ -174,7 +176,7 @@ async def register(body: RegisterIn, response: Response):
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Este e-mail já está cadastrado")
     doc = {"email": email, "name": body.name.strip(), "password_hash": hash_password(body.password),
-           "timezone": body.timezone or DEFAULT_TZ, "role": "caregiver", "created_at": now_utc()}
+           "timezone": body.timezone or DEFAULT_TZ, "role": body.account_type, "created_at": now_utc()}
     res = await db.users.insert_one(doc)
     doc["_id"] = res.inserted_id
     set_auth_cookies(response, str(res.inserted_id), email)
@@ -273,7 +275,7 @@ async def attach_status(owner_id: str, items: List[dict]) -> List[dict]:
 
 # ---------- Patients ----------
 @api.get("/patients")
-async def list_patients(user: dict = Depends(get_current_user)):
+async def list_patients(user: dict = Depends(get_caregiver)):
     docs = await db.patients.find({"owner_id": user["_id"]}).sort("name", 1).to_list(500)
     patients = [Patient.from_mongo(d) for d in docs]
     out = []
@@ -286,7 +288,7 @@ async def list_patients(user: dict = Depends(get_current_user)):
 
 
 @api.post("/patients")
-async def create_patient(body: PatientIn, user: dict = Depends(get_current_user)):
+async def create_patient(body: PatientIn, user: dict = Depends(get_caregiver)):
     patient = Patient(owner_id=user["_id"], created_at=now_utc(), **body.model_dump())
     res = await db.patients.insert_one(patient.to_mongo())
     patient.id = str(res.inserted_id)
@@ -294,19 +296,19 @@ async def create_patient(body: PatientIn, user: dict = Depends(get_current_user)
 
 
 @api.get("/patients/{patient_id}")
-async def get_patient(patient_id: str, user: dict = Depends(get_current_user)):
+async def get_patient(patient_id: str, user: dict = Depends(get_caregiver)):
     return (await owned_patient(patient_id, user)).model_dump()
 
 
 @api.put("/patients/{patient_id}")
-async def update_patient(patient_id: str, body: PatientIn, user: dict = Depends(get_current_user)):
+async def update_patient(patient_id: str, body: PatientIn, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     await db.patients.update_one({"_id": oid(patient_id)}, {"$set": body.model_dump()})
     return (await owned_patient(patient_id, user)).model_dump()
 
 
 @api.delete("/patients/{patient_id}")
-async def delete_patient(patient_id: str, user: dict = Depends(get_current_user)):
+async def delete_patient(patient_id: str, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     scope = {"patient_id": patient_id, "owner_id": user["_id"]}
     await db.medications.delete_many(scope)
@@ -318,14 +320,14 @@ async def delete_patient(patient_id: str, user: dict = Depends(get_current_user)
 
 # ---------- Medications ----------
 @api.get("/patients/{patient_id}/medications")
-async def list_medications(patient_id: str, user: dict = Depends(get_current_user)):
+async def list_medications(patient_id: str, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     docs = await db.medications.find({"patient_id": patient_id, "owner_id": user["_id"]}).sort("name", 1).to_list(500)
     return [Medication.from_mongo(d).model_dump() for d in docs]
 
 
 @api.post("/patients/{patient_id}/medications")
-async def create_medication(patient_id: str, body: MedicationIn, user: dict = Depends(get_current_user)):
+async def create_medication(patient_id: str, body: MedicationIn, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     med = Medication(owner_id=user["_id"], patient_id=patient_id, created_at=now_utc(), **body.model_dump())
     res = await db.medications.insert_one(med.to_mongo())
@@ -341,14 +343,14 @@ async def owned_medication(med_id: str, user: dict) -> Medication:
 
 
 @api.put("/medications/{med_id}")
-async def update_medication(med_id: str, body: MedicationIn, user: dict = Depends(get_current_user)):
+async def update_medication(med_id: str, body: MedicationIn, user: dict = Depends(get_caregiver)):
     await owned_medication(med_id, user)
     await db.medications.update_one({"_id": oid(med_id)}, {"$set": body.model_dump()})
     return (await owned_medication(med_id, user)).model_dump()
 
 
 @api.delete("/medications/{med_id}")
-async def delete_medication(med_id: str, user: dict = Depends(get_current_user)):
+async def delete_medication(med_id: str, user: dict = Depends(get_caregiver)):
     await owned_medication(med_id, user)
     await db.medications.delete_one({"_id": oid(med_id)})
     return {"ok": True}
@@ -356,7 +358,7 @@ async def delete_medication(med_id: str, user: dict = Depends(get_current_user))
 
 # ---------- Appointments ----------
 @api.get("/patients/{patient_id}/appointments")
-async def list_appointments(patient_id: str, user: dict = Depends(get_current_user)):
+async def list_appointments(patient_id: str, user: dict = Depends(get_caregiver)):
     patient = await owned_patient(patient_id, user)
     docs = await db.appointments.find({"patient_id": patient_id, "owner_id": user["_id"]}).to_list(1000)
     items = [appt_item(Appointment.from_mongo(d), patient.name) for d in docs]
@@ -364,7 +366,7 @@ async def list_appointments(patient_id: str, user: dict = Depends(get_current_us
 
 
 @api.post("/patients/{patient_id}/appointments")
-async def create_appointment(patient_id: str, body: AppointmentIn, user: dict = Depends(get_current_user)):
+async def create_appointment(patient_id: str, body: AppointmentIn, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     appt = Appointment(owner_id=user["_id"], patient_id=patient_id, created_at=now_utc(), **body.model_dump())
     res = await db.appointments.insert_one(appt.to_mongo())
@@ -380,7 +382,7 @@ async def owned_appointment(appt_id: str, user: dict) -> Appointment:
 
 
 @api.put("/appointments/{appt_id}")
-async def update_appointment(appt_id: str, body: AppointmentIn, user: dict = Depends(get_current_user)):
+async def update_appointment(appt_id: str, body: AppointmentIn, user: dict = Depends(get_caregiver)):
     await owned_appointment(appt_id, user)
     await db.appointments.update_one({"_id": oid(appt_id)}, {"$set": body.model_dump()})
     await db.notification_log.delete_many({"_id": {"$regex": f"^push:appt:{appt_id}:"}})
@@ -388,7 +390,7 @@ async def update_appointment(appt_id: str, body: AppointmentIn, user: dict = Dep
 
 
 @api.delete("/appointments/{appt_id}")
-async def delete_appointment(appt_id: str, user: dict = Depends(get_current_user)):
+async def delete_appointment(appt_id: str, user: dict = Depends(get_caregiver)):
     await owned_appointment(appt_id, user)
     await db.appointments.delete_one({"_id": oid(appt_id)})
     return {"ok": True}
@@ -419,21 +421,21 @@ async def build_agenda(user: dict, patient_id: Optional[str] = None) -> List[dic
 
 
 @api.get("/agenda/today")
-async def agenda_today(user: dict = Depends(get_current_user)):
+async def agenda_today(user: dict = Depends(get_caregiver)):
     tz = user_tz(user)
     return {"date": now_utc().astimezone(tz).date().isoformat(), "timezone": str(tz),
             "items": await build_agenda(user)}
 
 
 @api.get("/patients/{patient_id}/agenda")
-async def patient_agenda(patient_id: str, user: dict = Depends(get_current_user)):
+async def patient_agenda(patient_id: str, user: dict = Depends(get_caregiver)):
     await owned_patient(patient_id, user)
     return {"items": await build_agenda(user, patient_id)}
 
 
 # ---------- Actions / Audit ----------
 @api.post("/actions")
-async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
+async def mark_action(body: ActionIn, user: dict = Depends(get_caregiver)):
     tz = user_tz(user)
     if body.kind == "medication":
         parts = body.occurrence_key.split(":", 3)
@@ -465,7 +467,7 @@ async def mark_action(body: ActionIn, user: dict = Depends(get_current_user)):
 
 
 @api.get("/patients/{patient_id}/history")
-async def patient_history(patient_id: str, days: int = 30, user: dict = Depends(get_current_user)):
+async def patient_history(patient_id: str, days: int = 30, user: dict = Depends(get_caregiver)):
     patient = await owned_patient(patient_id, user)
     days = max(1, min(days, 365))
     tz = user_tz(user)
@@ -543,6 +545,7 @@ async def root():
 
 
 app.include_router(api)
+app.include_router(marketplace_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -559,8 +562,8 @@ async def seed_admin():
     if not existing:
         await db.users.insert_one({"email": email, "name": "Cauã", "password_hash": hash_password(password),
                                    "timezone": DEFAULT_TZ, "role": "admin", "created_at": now_utc()})
-    elif not verify_password(password, existing["password_hash"]):
-        await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(password)}})
+    elif existing.get("role") != "admin":
+        await db.users.update_one({"email": email}, {"$set": {"role": "admin"}})
 
 
 @app.on_event("startup")
@@ -573,6 +576,15 @@ async def startup():
     await db.audit_logs.create_index([("owner_id", 1), ("occurrence_key", 1)])
     await db.push_subscriptions.create_index("endpoint", unique=True)
     await seed_admin()
+    await db.caregiver_ads.create_index("owner_id", unique=True)
+    await db.caregiver_ads.create_index([("status", 1), ("paused", 1)])
+    await db.interests.create_index([("ad_id", 1), ("family_id", 1)], unique=True)
+    await db.interests.create_index("caregiver_id")
+    await db.reviews.create_index([("ad_id", 1), ("family_id", 1)], unique=True)
+    try:
+        await asyncio.to_thread(init_storage)
+    except Exception:
+        logger.exception("Storage init failed")
     app.state.notifier = asyncio.create_task(notifier_loop())
 
 

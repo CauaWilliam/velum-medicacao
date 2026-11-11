@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
 
   const syncTz = useCallback(async (u) => {
     const tz = browserTz();
-    if (u && u.timezone !== tz) {
+    if (u && u.timezone !== tz && !/^(Etc\/)?UTC$/.test(tz)) {
       const { data } = await api.patch("/auth/me", { timezone: tz }).catch(() => ({ data: u }));
       return data;
     }
@@ -31,8 +31,8 @@ export function AuthProvider({ children }) {
     setUser(await syncTz(data));
   };
 
-  const register = async (name, email, password) => {
-    const { data } = await api.post("/auth/register", { name, email, password, timezone: browserTz() });
+  const register = async (name, email, password, accountType) => {
+    const { data } = await api.post("/auth/register", { name, email, password, timezone: browserTz(), account_type: accountType });
     qc.clear();
     setUser(data);
   };

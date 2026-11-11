@@ -112,6 +112,18 @@ async def get_current_user(request: Request) -> dict:
     return user
 
 
+def require_roles(*roles: str):
+    async def dependency(request: Request) -> dict:
+        user = await get_current_user(request)
+        if user.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Acesso não permitido para este tipo de conta")
+        return user
+    return dependency
+
+
+get_caregiver = require_roles("caregiver", "admin")
+
+
 def public_user(user: dict) -> dict[str, Any]:
     return {"id": str(user["_id"]), "email": user["email"], "name": user.get("name", ""),
-            "timezone": user.get("timezone") or DEFAULT_TZ}
+            "timezone": user.get("timezone") or DEFAULT_TZ, "role": user.get("role", "caregiver")}

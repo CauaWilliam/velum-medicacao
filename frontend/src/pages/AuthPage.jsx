@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, HeartHandshake, Search } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatApiError } from "@/lib/api";
 import { FormField, PrimaryButton, inputCls } from "@/components/FormField";
@@ -9,6 +9,7 @@ export default function AuthPage({ mode }) {
   const isLogin = mode === "login";
   const { login, register } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [accountType, setAccountType] = useState("caregiver");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -19,7 +20,7 @@ export default function AuthPage({ mode }) {
     setBusy(true);
     try {
       if (isLogin) await login(form.email, form.password);
-      else await register(form.name, form.email, form.password);
+      else await register(form.name, form.email, form.password, accountType);
     } catch (err) {
       setError(formatApiError(err));
     } finally {
@@ -43,11 +44,23 @@ export default function AuthPage({ mode }) {
 
       <form onSubmit={submit} className="px-6 pt-8 pb-10 space-y-5 fade-up" data-testid={isLogin ? "login-form" : "register-form"}>
         <div>
-          <h2 className="font-heading text-2xl font-semibold">{isLogin ? "Bem-vindo de volta" : "Crie sua conta de cuidador"}</h2>
+          <h2 className="font-heading text-2xl font-semibold">{isLogin ? "Bem-vindo de volta" : "Crie sua conta"}</h2>
           <p className="text-ink-soft text-base mt-1">
-            {isLogin ? "Entre para ver a agenda dos seus pacientes." : "Seus pacientes e registros ficam visíveis só para você."}
+            {isLogin ? "Entre para continuar no Velum." : "Seus dados ficam visíveis só para você."}
           </p>
         </div>
+        {!isLogin && (
+          <div className="grid grid-cols-2 gap-3" role="radiogroup" data-testid="account-type-group">
+            {[["caregiver", "Sou cuidador(a)", "Organizo pacientes e me anuncio", HeartHandshake], ["family", "Procuro um cuidador", "Para minha família", Search]].map(([k, title, sub, Icon]) => (
+              <button key={k} type="button" role="radio" aria-checked={accountType === k} onClick={() => setAccountType(k)} data-testid={`account-type-${k}`}
+                className={`p-4 rounded-3xl border-2 text-left transition-[background-color,border-color,transform] active:scale-[0.98] ${accountType === k ? "border-sage bg-sage-light" : "border-sand-line bg-white"}`}>
+                <Icon className={`w-7 h-7 ${accountType === k ? "text-sage-dark" : "text-ink-soft"}`} />
+                <div className="font-bold text-base mt-2 leading-tight">{title}</div>
+                <div className="text-sm text-ink-soft leading-snug mt-1">{sub}</div>
+              </button>
+            ))}
+          </div>
+        )}
         {!isLogin && (
           <FormField label="Seu nome" htmlFor="name">
             <input id="name" required value={form.name} onChange={set("name")} className={inputCls} placeholder="Ex.: Ana Souza" data-testid="register-name-input" autoComplete="name" />
