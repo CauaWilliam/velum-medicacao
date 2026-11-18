@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 4: marketplace + roles. Backend: new suite test_marketplace.py has 26 tests and all pass. It covers account types, RBAC, the ad CRUD, photo upload to real object storage, admin moderation, family browse and filters, interests, reviews, pause, re-pending after edits and new photos, and the cascade on ad delete. The regression suite test_velum_backend.py has 21 tests and all pass, so 47/47 overall. Frontend (390x844): end-to-end tests passed. A caregiver registered, filled in the AdForm and submitted it (status 'Em análise'), uploaded a photo (blob shown; a non-image file was rejected with a toast), toggled pause, saw a rejection reason, edited the ad (back to pending) and deleted it with the confirm. A family registered (tabs Buscar/Pedidos/Perfil) and used the city (partial, any case), specialty and shift filters. The detail page showed R$ 35,50 / hora, specialties and availability. The family sent an interest (mask (31) 97306-1826 and 'Pedido enviado em' worked), reviewed with 4 stars (average shown on the detail page and the card), resent the interest (the same request was updated) and saw it under /pedidos. The caregiver's Pedidos tab showed name, phone and message, tel: and wa.me links, and the 'Novo' badge cleared after a click. Route guards are correct for both roles. The admin account was used only through the API to approve and reject TEST_ ads.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/my-ad/photo, DELETE /api/my-ad", "issue": "Replaced or deleted ad photos are never removed from object storage, so orphaned objects pile up. The whole upload is read into memory before the 5 MB check."},
+      {"endpoint": "N/A", "issue": "There is no account-deletion endpoint, so test data has to be cleaned up directly in Mongo."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Family returns to Buscar after a review", "issue": "The card briefly shows the cached 'Sem avaliações ainda' before the refetch updates it. It is correct after a fresh load.", "affected_selectors": ["[data-testid^=ad-card-]"]}
+    ],
+    "design_issues": [
+      {"screen": "/cuidadores/:id (mobile)", "issues": ["The sticky CTA block (interest-sent-note plus buttons) has no background. Content (the specialty tags) shows through the gap between the note and the buttons."]},
+      {"screen": "/anuncio > Pedidos", "issues": ["The phone number in the call button wraps onto 2 lines at 390px."]},
+      {"screen": "/cadastro", "issues": ["The subtitle 'Seus dados ficam visíveis só para você' contradicts the caregiver option, whose ad is public to families."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_marketplace.py", "/app/backend/tests/test_velum_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Give the sticky CTA container on CaregiverAdPage a background so content does not show through.",
+    "Optional: delete the old storage object when a photo is replaced or an ad is deleted.",
+    "Optional: debounce the market-city-filter. It fires one request per keystroke.",
+    "Optional: AdForm resets unsaved edits whenever the my-ad query refetches (for example after the pause toggle, because invalidateQueries() invalidates everything). Use targeted invalidation."
+  ],
+  "critical_code_review_comments": [
+    "The previous regression suite (test_velum_backend.py) cleaned up with delete_many({'email': {'$regex': '^test_'}}) and also deleted the owner's patients whose names start with TEST_. That deletes other concurrent runs' data, and it wiped my UI test accounts mid-run. I fixed it to delete only the exact (lowercased) emails the suite registers.",
+    "The frontend calls qc.invalidateQueries() with no key after every mutation, which refetches everything (including the photo blobs).",
+    "The del mutation in MyAdPage has no onError toast.",
+    "RBAC is correct: require_roles is applied everywhere. A family gets 403 on patients, agenda and my-ad; a caregiver gets 403 on marketplace; admin routes are admin-only; registering as admin returns 422. Hidden ads return 404 for families, including the photo."
+  ],
+  "updated_files": ["/app/backend/tests/test_marketplace.py (new)", "/app/backend/tests/test_velum_backend.py (cleanup now deletes only the exact emails it created)"],
+  "success_rate": {"backend": "100% (47/47)", "frontend": "100% of core flows"},
+  "seed_data_creation": "Only TEST_ caregiver and family accounts, ads, interests and reviews, all deleted afterwards (DB now has only the admin user, and 0 caregiver_ads, interests and reviews). The admin's patients were not touched. A few 1x1 test PNGs remain in object storage because there is no delete API.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest /app/backend/tests -p no:xdist -o addopts=''. The marketplace tests are ordered (TestMarketFlow test_01 to test_19) and clean up their users by id through pymongo. The backend lowercases emails. Admin moderation was done with /tmp/adm.py-style requests. The headless browser cannot test push."
+}

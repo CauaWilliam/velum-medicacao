@@ -13,10 +13,13 @@ API = f"{BASE_URL}/api"
 OWNER_EMAIL = "cauabeckler0@gmail.com"
 OWNER_PASSWORD = "Velum@2026"
 TZ = ZoneInfo("America/Sao_Paulo")
+CREATED_EMAILS = []  # exact emails registered by this suite (cleanup by these only)
 
 
 def _new_email(prefix="test"):
-    return f"test_{prefix}_{uuid.uuid4().hex[:8]}@example.com"
+    email = f"test_{prefix}_{uuid.uuid4().hex[:8]}@example.com"
+    CREATED_EMAILS.append(email.lower())
+    return email
 
 
 def _iso_tz(dt: datetime) -> str:
@@ -426,17 +429,11 @@ def cleanup(request):
         from pymongo import MongoClient
         c = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))
         d = c[os.environ.get("DB_NAME", "test_database")]
-        test_users = list(d.users.find({"email": {"$regex": "^test_"}}))
+        test_users = list(d.users.find({"email": {"$in": CREATED_EMAILS}}))
         ids = [str(u["_id"]) for u in test_users]
-        d.users.delete_many({"email": {"$regex": "^test_"}})
-        d.patients.delete_many({"owner_id": {"$in": ids}})
-        d.medications.delete_many({"owner_id": {"$in": ids}})
-        d.appointments.delete_many({"owner_id": {"$in": ids}})
-        d.audit_logs.delete_many({"owner_id": {"$in": ids}})
-        d.push_subscriptions.delete_many({"owner_id": {"$in": ids}})
-        owner = d.users.find_one({"email": OWNER_EMAIL})
-        if owner:
-            d.patients.delete_many({"owner_id": str(owner["_id"]), "name": {"$regex": "^TEST_"}})
+        for col in ("patients", "medications", "appointments", "audit_logs", "push_subscriptions"):
+            d[col].delete_many({"owner_id": {"$in": ids}})
+        d.users.delete_many({"_id": {"$in": [u["_id"] for u in test_users]}})
         c.close()
     except Exception as e:
         print(f"cleanup failed: {e}")
